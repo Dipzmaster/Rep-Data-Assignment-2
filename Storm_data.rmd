@@ -1,0 +1,100 @@
+---
+title: "Storm_data"
+author: "Dipak Nandeshwar"
+date: "12/08/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Impact of Severe Weather Events on Public Health and Economy in the United States
+
+### Synonpsis  
+In this report, we aim to analyze the impact of different weather events on public health and economy based on the storm database collected from the U.S. National Oceanic and Atmospheric Administration's (NOAA) from 1950 - 2011. We will use the estimates of fatalities, injuries, property and crop damage to decide which types of event are most harmful to the population health and economy. From these data, we found that excessive heat and tornado are most harmful with respect to population health, while flood, drought, and hurricane/typhoon have the greatest economic consequences.
+
+### Basic settings
+```{r}
+library(dplyr)
+library(ggplot2)
+```
+
+### Data Processing
+First, we download the data file and unzip it.
+```{r}
+if (!"repdata_data_StormData.csv.bz2" %in% dir("."))
+  {
+    print("Downloading Data")
+    download.file("http://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", destfile = "repdata_data_StormData.csv.bz2")
+  }
+
+if (!"stormData" %in% ls()) 
+  {
+    stormData <- read.csv("repdata_data_StormData.csv.bz2")
+  }
+dim(stormData)
+```
+Then, we read the generated csv file. If the data already exists in the working environment, we do not need to load it again. Otherwise, we read the csv file.
+```{r}
+fatalitiesAndInjuries <- stormData %>% group_by (EVTYPE)  %>% summarise(Fatalities =  sum(FATALITIES), Injuries = sum(INJURIES))
+fatalitiesAndInjuries <- mutate(fatalitiesAndInjuries, total = Fatalities + Injuries) 
+topTen <- fatalitiesAndInjuries[order(fatalitiesAndInjuries$total, decreasing = TRUE),][1:10,]
+topTen
+```
+There are 902297 rows and 37 columns in total.
+The events in the database start in the year 1950 and end in November 2011. In the earlier years of the database there are generally fewer events recorded, most likely due to a lack of good records. More recent years should be considered more complete.
+
+```{r}
+propertyAndCropDmgData <- stormData[ , c(8,25,26,27,28)]
+table(propertyAndCropDmgData$PROPDMGEXP)
+```  
+
+Based on the above histogram, we see that the number of events tracked starts to significantly increase around 1995. So, we use the subset of the data from 1990 to 2011 to get most out of good records.
+```{r}
+table(propertyAndCropDmgData$CROPDMGEXP)
+```
+Now, there are 681500 rows and 38 columns in total.
+
+#### Impact on Public Health
+In this section, we check the number of **fatalities** and **injuries** that are caused by the severe weather events. We would like to get the first 15 most severe types of weather events.
+```{r}
+propertyAndCropDmgData <- mutate(propertyAndCropDmgData, PropDmgInDollars = PROPDMG, CropDmgInDollars = CROPDMG)
+
+propertyAndCropDmgData$PROPDMGEXP[!grepl("K|M|B", propertyAndCropDmgData$PROPDMGEXP, ignore.case = TRUE)] <- 0
+
+propertyAndCropDmgData$PROPDMGEXP[grep("K", propertyAndCropDmgData$PROPDMGEXP, ignore.case = TRUE)] <- 3
+propertyAndCropDmgData$PROPDMGEXP[grep("M", propertyAndCropDmgData$PROPDMGEXP, ignore.case = TRUE)] <- 6
+propertyAndCropDmgData$PROPDMGEXP[grep("B", propertyAndCropDmgData$PROPDMGEXP, ignore.case = TRUE)] <- 9
+propertyAndCropDmgData$PROPDMGEXP[grep("H", propertyAndCropDmgData$PROPDMGEXP, ignore.case = TRUE)] <- 2
+propertyAndCropDmgData$PropDmgInDollars <- propertyAndCropDmgData$PROPDMG * 10^as.numeric(propertyAndCropDmgData$PROPDMGEXP)
+
+
+propertyAndCropDmgData$CROPDMGEXP[!grepl("K|M|B", propertyAndCropDmgData$CROPDMGEXP, ignore.case = TRUE)] <- 0
+propertyAndCropDmgData$CROPDMGEXP[grep("K", propertyAndCropDmgData$CROPDMGEXP, ignore.case = TRUE)] <- 3
+propertyAndCropDmgData$CROPDMGEXP[grep("M", propertyAndCropDmgData$CROPDMGEXP, ignore.case = TRUE)] <- 6
+propertyAndCropDmgData$CROPDMGEXP[grep("B", propertyAndCropDmgData$CROPDMGEXP, ignore.case = TRUE)] <- 9
+propertyAndCropDmgData$CropDmgInDollars <- propertyAndCropDmgData$CROPDMG * 10^as.numeric(propertyAndCropDmgData$CROPDMGEXP)
+
+
+dmgByEvent <- propertyAndCropDmgData %>% group_by(EVTYPE) %>% summarise(totalPropDmg = sum(PropDmgInDollars), totalCropDmg = sum(CropDmgInDollars))
+dmgByEvent <- mutate(dmgByEvent, totalDmgInDollars = totalPropDmg + totalCropDmg)
+
+topPropDmg <- dmgByEvent[order(dmgByEvent$totalPropDmg, decreasing = TRUE),][1:10,]
+topPropDmg
+```
+
+#### Impact on Economy
+We will convert the **property damage** and **crop damage** data into comparable numerical forms according to the meaning of units described in the code book ([Storm Events](http://ire.org/nicar/database-library/databases/storm-events/)). Both `PROPDMGEXP` and `CROPDMGEXP` columns record a multiplier for each observation where we have Hundred (H), Thousand (K), Million (M) and Billion (B).
+
+```{r}
+topCropDmg <- dmgByEvent[order(dmgByEvent$totalCropDmg, decreasing = TRUE),][1:10,]
+topCropDmg
+```
+
+### Results
+As for the impact on public health, we have got two sorted lists of severe weather events below by the number of people badly affected.
+```{r}
+ggplot(topTen, aes(total, EVTYPE)) + geom_bar(stat = "identity", fill = "red") + ggtitle("Events Responsible for most Fatalities and Injuries") + ylab("Event")+ xlab("Total Fatalities and Injuries")
+```
+And the following is a pair of graphs of total fatalities and total injuries affected by these severe weather events. 
